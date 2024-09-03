@@ -1,11 +1,10 @@
 pipeline {
     agent { label 'Jenkins-Agent' }
     tools {
-        jdk 'Java-17'
-        maven 'Maven3'
+        jdk 'Java17'
+        maven 'maven3'
     }
-
-            environment {
+    environment {
 	    APP_NAME = "register-app-pipeline"
             RELEASE = "1.0.0"
             DOCKER_USER = "sudarshan020"
@@ -13,9 +12,7 @@ pipeline {
             IMAGE_NAME = "${DOCKER_USER}" + "/" + "${APP_NAME}"
             IMAGE_TAG = "${RELEASE}-${BUILD_NUMBER}"
 	    JENKINS_API_TOKEN = credentials("JENKINS_API_TOKEN")
-
     }
-
     stages{
         stage("Cleanup Workspace"){
                 steps {
@@ -34,32 +31,34 @@ pipeline {
                 sh "mvn clean package"
             }
 
-        }
+       }
 
-        stage("Test Application"){
+       stage("Test Application"){
            steps {
                  sh "mvn test"
            }
        }
-         stage("SonarQube Analysis"){
+
+       stage("SonarQube Analysis"){
            steps {
 	           script {
-		           withSonarQubeEnv(credentialsId: 'jenkins-sonarqube-token') {
-                       sh "mvn sonar:sonar"
-		               }
-	            }	
-            }
-         }
-	    
-         stage("Quality Gate"){
-	   steps {
-		   script {
-			   waitForQualityGate abortPipeline: false, credentialsId: 'jenkins-sonarqube-token'
-                   }	
+		        withSonarQubeEnv(credentialsId: 'jenkins-sonarqube-token') { 
+                        sh "mvn sonar:sonar"
+		        }
+	           }	
            }
+       }
+
+       stage("Quality Gate"){
+           steps {
+               script {
+                    waitForQualityGate abortPipeline: false, credentialsId: 'jenkins-sonarqube-token'
+                }	
+            }
+
         }
 
-         stage("Build & Push Docker Image") {
+        stage("Build & Push Docker Image") {
             steps {
                 script {
                     docker.withRegistry('',DOCKER_PASS) {
@@ -72,17 +71,18 @@ pipeline {
                     }
                 }
             }
+
        }
 
        stage("Trivy Scan") {
            steps {
                script {
-	            sh ('docker run -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image niroshaum/register-app-pipeline:latest --no-progress --scanners vuln  --exit-code 0 --severity HIGH,CRITICAL --format table')
+	            sh ('docker run -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image sudarshan020/register-app-pipeline:latest --no-progress --scanners vuln  --exit-code 0 --severity HIGH,CRITICAL --format table')
                }
            }
        }
 
-	stage ('Cleanup Artifacts') {
+       stage ('Cleanup Artifacts') {
            steps {
                script {
                     sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG}"
@@ -94,11 +94,22 @@ pipeline {
        stage("Trigger CD Pipeline") {
             steps {
                 script {
-                    sh "curl -v -k --user Sudarshan N S:${JENKINS_API_TOKEN} -X POST -H 'cache-control: no-cache' -H 'content-type: application/x-www-form-urlencoded' --data 'IMAGE_TAG=${IMAGE_TAG}' 'ec2-15-206-80-25.ap-south-1.compute.amazonaws.com:8080/job/gitops-register-app-cd/buildWithParameters?token=gitops-token'"
+                    sh "curl -v -k --user sudarshan020:${JENKINS_API_TOKEN} -X POST -H 'cache-control: no-cache' -H 'content-type: application/x-www-form-urlencoded' --data 'IMAGE_TAG=${IMAGE_TAG}' 'a0b82a44e026a42c3a81957e1d787c52-2096051341.ap-south-1.elb.amazonaws.com:8080/job/gitops-register-app-cd/buildWithParameters?token=gitops-token'"
                 }
             }
        }
-    
+    }
 
-  }
+    post {
+       failure {
+             emailext body: '''${SCRIPT, template="groovy-html.template"}''', 
+                      subject: "${env.JOB_NAME} - Build # ${env.BUILD_NUMBER} - Failed", 
+                      mimeType: 'text/html',to: "self37451@gmail.com"
+      }
+      success {
+            emailext body: '''${SCRIPT, template="groovy-html.template"}''', 
+                     subject: "${env.JOB_NAME} - Build # ${env.BUILD_NUMBER} - Successful", 
+                     mimeType: 'text/html',to: "self37451@gmail.com"
+      }      
+   }
 }
